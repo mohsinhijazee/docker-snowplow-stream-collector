@@ -1,6 +1,6 @@
 FROM java:7-jre
 
-MAINTAINER Daniel Zohar <daniel@memrise.com
+MAINTAINER Daniel Zohar <daniel@memrise.com>
 
 ENV SNOWPLOW_SOURCE_ZIP snowplow_kinesis_r65_scarlet_rosefinch.zip
 ENV JAR_FILE snowplow-stream-collector-0.4.0
