@@ -1,59 +1,127 @@
-# See Github for documentation - https://github.com/snowplow/snowplow/blob/5af56388e1144c5af17e65182683593d38fceb9d/2-collectors/scala-stream-collector/src/main/resources/config.hocon.sample
-collector {
-  interface = "0.0.0.0"
-  port = 80
-  production = true
+# Copyright (c) 2013-2014 Snowplow Analytics Ltd. All rights reserved.
+#
+# This program is licensed to you under the Apache License Version 2.0, and
+# you may not use this file except in compliance with the Apache License
+# Version 2.0.  You may obtain a copy of the Apache License Version 2.0 at
+# http://www.apache.org/licenses/LICENSE-2.0.
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the Apache License Version 2.0 is distributed on an "AS
+# IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied.  See the Apache License Version 2.0 for the specific language
+# governing permissions and limitations there under.
 
+# This file (application.conf.example) contains a template with
+# configuration options for the Scala Stream Collector.
+#
+# To use, copy this to 'application.conf' and modify the configuration options.
+
+# 'collector' contains configuration options for the main Scala collector.
+collector {
+  # The collector runs as a web service specified on the following
+  # interface and port.
+  interface = "{{ INTERFACE | default("0.0.0.0") }}"
+  port = {{COLLECTOR_PORT | default(80) }}
+
+  # Production mode disables additional services helpful for configuring and
+  # initializing the collector, such as a path '/dump' to view all
+  # records stored in the current stream.
+  production = {{PRODUCTION | default("false") }}
+
+  # Configure the P3P policy header.
   p3p {
     policyref = "/w3c/p3p.xml"
     CP = "NOI DSP COR NID PSA OUR IND COM NAV STA"
   }
 
+  # The collector returns a cookie to clients for user identification
+  # with the following domain and expiration.
   cookie {
-    expiration = 0
+    # Set to 0 to disable the cookie
+    expiration = {{ COOKIE_EXPIRATION_IN_DAYS | default(0) }} days
+    # The domain is optional and will make the cookie accessible to other
+    # applications on the domain. Comment out this line to tie cookies to
+    # the collector's full domain
+    domain = "{{ COOKIED_DOMAIN | default(".dubizzle.com") }}"
   }
 
+  # The collector has a configurable sink for storing data in
+  # different formats for the enrichment process.
   sink {
+    # Sinks currently supported are:
+    # 'kinesis' for writing Thrift-serialized records to a Kinesis stream
+    # 'stdout' for writing Base64-encoded Thrift-serialized records to stdout
+    #    Recommended settings for 'stdout' so each line printed to stdout
+    #    is a serialized record are:
+    #      1. Setting 'akka.loglevel = OFF' and 'akka.loggers = []'
+    #         to disable all logging.
+    #      2. Using 'sbt assembly' and 'java -jar ...' to disable
+    #         sbt logging.
     enabled = "kinesis"
 
     kinesis {
-      thread-pool-size: {{ KINESIS_THREAD_POOL_SIZE }} 
+      thread-pool-size: 10 # Thread pool size for Kinesis API requests
+
+      # The following are used to authenticate for the Amazon Kinesis sink.
+      #
+      # If both are set to 'cpf', a properties file on the classpath is used.
+      # http://docs.aws.amazon.com/AWSJavaSDK/latest/javadoc/com/amazonaws/auth/ClasspathPropertiesFileCredentialsProvider.html
+      #
+      # If both are set to 'iam', use AWS IAM Roles to provision credentials.
+      #
+      # If both are set to 'env', use environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
       aws {
-        access-key: "{{ AWS_ACCESS_KEY }}"
-        secret-key: "{{ AWS_SECRET_KEY }}"
+        access-key: "{{ ACCESS_KEY_MODE | default("env") }}"
+        secret-key: "{{ SECRET_KEY_MODE | default("env") }}"
       }
 
+      # Data will be stored in the following stream.
       stream {
-        size: {{ KINESIS_STREAM_SIZE }}
-        region: "{{ AWS_REGION }}"
-        name: "{{ SNOWPLOW_STREAM_NAME }}"
+        region: "{{STREAM_REGION | default("eu-west-1")}}"
+        good: "{{ GOOD_STREAM }}"
+        bad: "{{ BAD_STREAM }}"
       }
 
+      # Minimum and maximum backoff periods
       backoffPolicy: {
         minBackoff: 3000 # 3 seconds
         maxBackoff: 600000 # 5 minutes
       }
 
-      buffer: {
-        byte-limit: 4000000 # 4MB
-        record-limit: 500 # 500 records
-        time-limit: 60000 # 1 minute
+      # Incoming events are stored in a buffer before being sent to Kinesis.
+      # The buffer is emptied whenever:
+      # - the number of stored records reaches record-limit or
+      # - the combined size of the stored records reaches byte-limit or
+      # - the time in milliseconds since the buffer was last emptied reaches time-limit
+      buffer {
+        byte-limit: {{ BUFFER_BYTE_LIMIT | default(4000000) }}
+        record-limit: {{ BUFFER_RECORD_LIMIT | default(500) }}
+        time-limit: {{ BUFFER_TIME_LIMIT | default(60000) }}
       }
     }
   }
 }
 
+# Akka has a variety of possible configuration options defined at
+# http://doc.akka.io/docs/akka/2.2.3/general/configuration.html.
 akka {
-  loglevel = {{ LOG_LEVEL }} 
+  loglevel = {{ LOG_LEVEL | default("DEBUG") }} # 'OFF' for no logging, 'DEBUG' for all logging.
   loggers = ["akka.event.slf4j.Slf4jLogger"]
 }
 
+# spray-can is the server the Stream collector uses and has configurable
+# options defined at
+# https://github.com/spray/spray/blob/master/spray-can/src/main/resources/reference.conf
 spray.can.server {
+  # To obtain the hostname in the collector, the 'remote-address' header
+  # should be set. By default, this is disabled, and enabling it
+  # adds the 'Remote-Address' header to every request automatically.
   remote-address-header = on
 
   uri-parsing-mode = relaxed
   raw-request-uri-header = on
 
+  # Define the maximum request length (the default is 2048)
   parsing {
     max-uri-length = 32768
   }
